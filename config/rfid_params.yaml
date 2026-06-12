@@ -1,0 +1,62 @@
+# RFID Node — central configuration
+# Edit this file to change defaults used by rfid_spb_node.py.
+# Override path: set RFID_NODE_CONFIG env var to point at a custom copy.
+# Credentials live in rfid_secrets.yaml (gitignored) — see rfid_secrets.example.yaml.
+
+# ── ISA-95 / Sparkplug B identity ────────────────────────────────────────────
+# Group  = Enterprise+Area+Site+Factory: DMATDTS_DLSU_LS_MiniFactory
+# Node   = rfid_node
+# Device = rfid_reader
+# Full SCADA path: DMATDTS_DLSU_LS_MiniFactory/rfid_node/rfid_reader/<metric>
+spb_bridge:
+  group_id:        DMATDTS_DLSU_LS_MiniFactory
+  edge_node_id:    rfid_node
+  device_id:       rfid_reader
+  metric_prefix:   ""
+
+  # ID of the SCADA primary host monitored on STATE/<id>.
+  # If this host goes OFFLINE the bridge enters Safe State (Aborted + alarm 9003).
+  primary_host_id: IgnitionPrimary
+
+  # Heartbeat toggle interval in seconds.
+  heartbeat_interval_s: 0.5
+
+  # --- Broker selection ---
+  # broker_type: local | hivemq
+  broker_type: local
+
+  # NOTE: Broker host / username / password live in rfid_secrets.yaml (gitignored).
+  # See rfid_secrets.example.yaml for the expected structure.
+  local:
+    port:    1883
+    use_tls: false
+
+  hivemq:
+    host: ""
+    port: 8883
+    use_tls: true
+    username: ""
+    password: ""
+
+
+# ── RFID reader (M5Stack + WS1850S) ─────────────────────────────────────────
+rfid:
+  # USB serial port where the M5Stack appears.
+  # Check with: ls /dev/ttyUSB* or ls /dev/ttyACM*
+  port:          /dev/ttyUSB0
+  baud_rate:     115200
+
+  # How long Execute may wait for a tag before alarm 9002 (ScanTimeout) fires.
+  scan_timeout_s: 10.0
+
+  # Alarm 9001 (ReaderOffline) fires if no heartbeat is received from the
+  # M5Stack for this many seconds. Must be > firmware HB_INTERVAL_MS (5 s).
+  hb_timeout_s: 15.0
+
+
+# ── Alarm codes ───────────────────────────────────────────────────────────────
+# Informational — do not change unless rfid_spb_node.py is also updated.
+alarms:
+  reader_offline:        9001
+  scan_timeout:          9002
+  primary_host_offline:  9003

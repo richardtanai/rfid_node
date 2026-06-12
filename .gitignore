@@ -1,0 +1,16 @@
+# Credentials — never commit
+config/rfid_secrets.yaml
+
+# PlatformIO build artifacts
+firmware/rfid_m5stack/.pio/
+firmware/rfid_m5stack/.pioenvs/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Editor
+.vscode/
+*.swp
+*.swo

@@ -1,0 +1,28 @@
+[Unit]
+Description=RFID Node — Sparkplug B bridge for M5Stack + WS1850S RFID reader
+Documentation=file:/home/dmat2/agx_arm_ws/src/rfid_node/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dmat2
+Group=dmat2
+
+Environment=HOME=/home/dmat2
+Environment=RFID_NODE_CONFIG=/home/dmat2/agx_arm_ws/src/rfid_node/config/rfid_params.yaml
+Environment=RFID_NODE_SECRETS=/home/dmat2/agx_arm_ws/src/rfid_node/config/rfid_secrets.yaml
+
+# Broker override — set to "hivemq" or "local", or leave empty to use rfid_params.yaml.
+Environment=RFID_BROKER_TYPE=hivemq
+
+WorkingDirectory=/home/dmat2/agx_arm_ws/src/rfid_node
+
+ExecStart=/usr/bin/python3 /home/dmat2/agx_arm_ws/src/rfid_node/rfid_spb_node.py
+
+Restart=on-failure
+RestartSec=10s
+TimeoutStopSec=15s
+
+[Install]
+WantedBy=multi-user.target
