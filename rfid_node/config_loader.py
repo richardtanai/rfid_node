@@ -1,26 +1,25 @@
 """Load rfid_params.yaml for the RFID node.
 
-Env vars (in priority order):
-  RFID_NODE_CONFIG   — path to the params YAML
-  RFID_NODE_SECRETS  — path to a secrets overlay YAML
+Resolution priority (see spb_node_common.config_base.locate_config_file):
+  1. RFID_NODE_CONFIG / RFID_NODE_SECRETS environment variables
+  2. the installed package share dir: share/rfid_node/config/rfid_params.yaml
 """
 
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "spb_node_common"))
+from ament_index_python.packages import get_package_share_directory
 
-from config_base import (  # noqa: E402
+from spb_node_common.config_base import (
     BrokerConfig, NodeConfigBase, deep_get, load_yaml_with_secrets,
 )
 
-_HERE = Path(__file__).parent
+
+def _share_dir() -> Path:
+    return Path(get_package_share_directory("rfid_node"))
 
 
 class RfidConfig(NodeConfigBase):
     """Typed view over rfid_params.yaml."""
-
-    # ── RFID reader ───────────────────────────────────────────────────────
 
     @property
     def rfid_port(self) -> str:
@@ -50,7 +49,7 @@ def load_config(reload: bool = False) -> RfidConfig:
             secrets_env_var="RFID_NODE_SECRETS",
             default_config_filename="rfid_params.yaml",
             default_secrets_filename="rfid_secrets.yaml",
-            anchor_dir=_HERE,
+            anchor_dir=_share_dir(),
         )
         _cached = RfidConfig(data)
     return _cached

@@ -23,7 +23,7 @@ spb_bridge:
 
   # --- Broker selection ---
   # broker_type: local | hivemq
-  broker_type: local
+  broker_type: hivemq
 
   # NOTE: Broker host / username / password live in rfid_secrets.yaml (gitignored).
   # See rfid_secrets.example.yaml for the expected structure.
@@ -43,7 +43,7 @@ spb_bridge:
 rfid:
   # USB serial port where the M5Stack appears.
   # Check with: ls /dev/ttyUSB* or ls /dev/ttyACM*
-  port:          /dev/ttyUSB0
+  port:          /dev/ttyACM0
   baud_rate:     115200
 
   # How long Execute may wait for a tag before alarm 9002 (ScanTimeout) fires.
