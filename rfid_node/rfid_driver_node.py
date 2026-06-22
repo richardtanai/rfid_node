@@ -15,7 +15,14 @@ import threading
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Empty, String
+from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
+from std_msgs.msg import Bool, Empty, String
+
+_TRANSIENT_LOCAL_QOS = QoSProfile(
+    depth=1,
+    durability=DurabilityPolicy.TRANSIENT_LOCAL,
+    reliability=ReliabilityPolicy.RELIABLE,
+)
 
 from .config_loader import load_config
 from .rfid import RfidReader
@@ -25,22 +32,74 @@ class RfidDriverNode(Node):
     def __init__(self):
         super().__init__("rfid_driver_node")
         self._cfg = load_config()
+        self.declare_parameter("port", "")
+        port_override = self.get_parameter("port").value.strip()
+        if port_override:
+            self._cfg._d.setdefault("rfid", {})["port"] = port_override
         self._reader = RfidReader(self._cfg)
         self._scanning = False
 
-        self._result_pub = self.create_publisher(String, "rfid/scan_result", 10)
-        self.create_subscription(Empty, "rfid/trigger", self._on_trigger, 10)
+        self._result_pub   = self.create_publisher(String, "rfid/scan_result",       10)
+        self._tag_pub      = self.create_publisher(String, "rfid/tag",               10)
+        self._online_pub   = self.create_publisher(Bool,   "rfid/driver_online",     _TRANSIENT_LOCAL_QOS)
+        self._fw_ver_pub   = self.create_publisher(String, "rfid/firmware_version",  _TRANSIENT_LOCAL_QOS)
+        self._fw_match_pub = self.create_publisher(Bool,   "rfid/firmware_match",    _TRANSIENT_LOCAL_QOS)
+        self.create_subscription(Empty,  "rfid/trigger", self._on_trigger, 10)
+        self.create_subscription(String, "rfid/cmd",     self._on_cmd,     10)
 
-        # Try to open the serial port up front; non-fatal if absent (the next
-        # trigger will report ReaderOffline and the bridge will alarm).
+        # Try to open the serial port up front; non-fatal if absent.
+        # Publish driver_online=True only when serial port opens successfully.
         try:
             self._reader.start()
+            self._reader.set_tag_callback(self._on_tag_detected)
+            self._check_firmware_version()
+            online_msg = Bool(); online_msg.data = True
+            self._online_pub.publish(online_msg)
         except RuntimeError as exc:
             self.get_logger().warn(f"Reader not available at startup: {exc}")
 
         self.get_logger().info(
             f"rfid_driver_node up — port={self._cfg.rfid_port} "
             f"baud={self._cfg.rfid_baud_rate}")
+
+    def _check_firmware_version(self):
+        expected = self._cfg.expected_firmware_version
+        ver = self._reader.get_version(timeout=3.0)
+        ver_str = ver if ver else "UNKNOWN"
+
+        fw_msg = String(); fw_msg.data = ver_str
+        self._fw_ver_pub.publish(fw_msg)
+
+        if not ver:
+            self.get_logger().warn(
+                "[RFID] Firmware version check timed out — "
+                "M5Stack may be running old firmware without version support")
+            match = False
+        elif not expected:
+            self.get_logger().info(f"[RFID] Firmware version: {ver} (no expected version configured)")
+            match = True
+        elif ver == expected:
+            self.get_logger().info(f"[RFID] Firmware version: {ver} ✓ matches expected")
+            match = True
+        else:
+            self.get_logger().warn(
+                f"[RFID] Firmware MISMATCH: device={ver}, expected={expected} — "
+                "update the M5Stack firmware to avoid protocol errors")
+            match = False
+
+        match_msg = Bool(); match_msg.data = match
+        self._fw_match_pub.publish(match_msg)
+
+    def _on_tag_detected(self, result):
+        """Called from the serial background thread on every tag detection."""
+        msg = String()
+        msg.data = result.tag_id
+        self._tag_pub.publish(msg)
+
+    def _on_cmd(self, msg: String):
+        """Route rfid/cmd 'start' to a scan trigger (no bridge needed for manual scans)."""
+        if msg.data.strip().lower() == 'start':
+            self._on_trigger(Empty())
 
     def _on_trigger(self, _msg: Empty):
         if self._scanning:

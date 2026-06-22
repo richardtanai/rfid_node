@@ -30,6 +30,10 @@ class RfidConfig(NodeConfigBase):
         return int(deep_get(self._d, "rfid", "baud_rate", default=115200))
 
     @property
+    def expected_firmware_version(self) -> str:
+        return str(deep_get(self._d, "rfid", "expected_firmware_version", default=""))
+
+    @property
     def scan_timeout_s(self) -> float:
         return float(deep_get(self._d, "rfid", "scan_timeout_s", default=10.0))
 

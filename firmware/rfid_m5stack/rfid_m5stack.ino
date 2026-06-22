@@ -5,13 +5,15 @@
  * events over USB serial (115200 baud) to the host Jetson.
  *
  * Serial protocol (M5Stack -> Jetson):
- *   {"event":"tag",   "uid":"A1B2C3D4", "ts_ms":12345}
- *   {"event":"hb",    "ts_ms":12345}
- *   {"event":"error", "msg":"init_failed", "ts_ms":12345}
+ *   {"event":"tag",     "uid":"A1B2C3D4", "ts_ms":12345}
+ *   {"event":"hb",      "ts_ms":12345}
+ *   {"event":"version", "ver":"v1.5.0",   "ts_ms":12345}
+ *   {"event":"error",   "msg":"init_failed", "ts_ms":12345}
  *
  * Serial protocol (Jetson -> M5Stack):
- *   {"cmd":"scan"}  -- clears last_uid so the next detection of any tag
- *                      (including the same one) is treated as is_new=true
+ *   {"cmd":"scan"}    -- clears last_uid so the next detection of any tag
+ *                        (including the same one) is treated as is_new=true
+ *   {"cmd":"version"} -- reply with current firmware version
  *
  * Card detection uses wakeup() / WUPA rather than detect() / REQA.
  * REQA only wakes cards in IDLE state; WUPA also wakes cards in HALT state.
@@ -130,6 +132,14 @@ static void emit_error(const char* msg) {
     Serial.println("}");
 }
 
+static void emit_version() {
+    Serial.print("{\"event\":\"version\",\"ver\":\"");
+    Serial.print(FW_VERSION);
+    Serial.print("\",\"ts_ms\":");
+    Serial.print(millis());
+    Serial.println("}");
+}
+
 // -- Serial input (commands from Jetson) --------------------------------------
 
 static void poll_serial_input() {
@@ -142,6 +152,9 @@ static void poll_serial_input() {
                 // the same one that was just read — is treated as is_new=true.
                 last_uid     = "";
                 last_emit_ms = 0;
+            }
+            if (serial_buf.indexOf("\"version\"") >= 0) {
+                emit_version();
             }
             serial_buf = "";
         } else {
@@ -244,6 +257,7 @@ void setup() {
     }
 
     emit_hb();
+    emit_version();
     last_hb_ms   = millis();
     last_disp_ms = millis();
 }

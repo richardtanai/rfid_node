@@ -46,6 +46,9 @@ rfid:
   port:          /dev/ttyACM0
   baud_rate:     115200
 
+  # Firmware version expected on the M5Stack.  Driver warns (and panel flags) on mismatch.
+  expected_firmware_version: "v1.5.0"
+
   # How long Execute may wait for a tag before alarm 9002 (ScanTimeout) fires.
   scan_timeout_s: 10.0
 

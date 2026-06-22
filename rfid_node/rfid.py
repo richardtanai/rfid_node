@@ -37,7 +37,8 @@ import serial
 
 from .config_loader import load_config
 
-_SCAN_CMD = b'{"cmd":"scan"}\n'
+_SCAN_CMD    = b'{"cmd":"scan"}\n'
+_VERSION_CMD = b'{"cmd":"version"}\n'
 
 
 class RfidResult(NamedTuple):
@@ -65,10 +66,15 @@ class RfidReader:
         self._stop_event  = threading.Event()
         self._error: Optional[RuntimeError] = None
         self._thread: Optional[threading.Thread] = None
+        self._tag_callback: Optional[Callable] = None
 
         # Serial reference shared with background thread for command writes.
         self._serial: Optional[serial.Serial] = None
         self._serial_lock = threading.Lock()
+
+        # Firmware version populated from boot event or {"cmd":"version"} reply.
+        self.firmware_version: Optional[str] = None
+        self._version_received = threading.Event()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -102,6 +108,28 @@ class RfidReader:
         if self._thread:
             self._thread.join(timeout=3.0)
         self._thread = None
+
+    def set_tag_callback(self, cb: Callable) -> None:
+        """Register a callback fired on every tag detection (in addition to queue).
+
+        Called from the background serial thread with a single RfidResult argument.
+        Must be non-blocking; any exceptions are silently swallowed.
+        """
+        self._tag_callback = cb
+
+    def get_version(self, timeout: float = 3.0) -> Optional[str]:
+        """Request firmware version from M5Stack; returns version string or None.
+
+        Sends {"cmd":"version"} and waits up to *timeout* seconds for the
+        {"event":"version"} reply.  Should be called after start().
+        """
+        self._version_received.clear()
+        with self._serial_lock:
+            if self._serial is None or not self._serial.is_open:
+                return None
+            self._serial.write(_VERSION_CMD)
+        self._version_received.wait(timeout)
+        return self.firmware_version
 
     # ------------------------------------------------------------------
     # Public API
@@ -192,6 +220,11 @@ class RfidReader:
                 if event == "hb":
                     last_hb = time.monotonic()
 
+                elif event == "version":
+                    self.firmware_version = obj.get("ver", "")
+                    self._version_received.set()
+                    print(f"[RFID] Firmware version: {self.firmware_version}")
+
                 elif event == "tag":
                     uid = obj.get("uid", "")
                     if uid:
@@ -203,6 +236,11 @@ class RfidReader:
                             self._tag_queue.put_nowait(result)
                         except _queue.Full:
                             pass
+                        if self._tag_callback is not None:
+                            try:
+                                self._tag_callback(result)
+                            except Exception:
+                                pass
                         print(f"[RFID] Tag detected: {uid.upper()}")
 
                 elif event == "no_tag":

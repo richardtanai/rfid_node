@@ -4,13 +4,15 @@ Runs on the M5Stack (ESP32). Polls the WS1850S RFID chip over I2C and emits
 newline-delimited JSON events over USB serial (115200 baud) to the host Jetson.
 
 Serial protocol (M5Stack → Jetson):
-    {"event":"tag",    "uid":"A1B2C3D4", "ts_ms":12345}
-    {"event":"no_tag", "ts_ms":12345}
-    {"event":"hb",     "ts_ms":12345}
-    {"event":"error",  "msg":"i2c_timeout", "ts_ms":12345}
+    {"event":"tag",     "uid":"A1B2C3D4", "ts_ms":12345}
+    {"event":"no_tag",  "ts_ms":12345}
+    {"event":"hb",      "ts_ms":12345}
+    {"event":"version", "ver":"1.0.0",    "ts_ms":12345}
+    {"event":"error",   "msg":"i2c_timeout", "ts_ms":12345}
 
 Serial protocol (Jetson → M5Stack):
-    {"cmd":"scan"}   — force an immediate fresh read (bypasses re-emit guard)
+    {"cmd":"scan"}    — force an immediate fresh read (bypasses re-emit guard)
+    {"cmd":"version"} — request firmware version reply
 
 ts_ms is milliseconds since boot (monotonic). The Jetson host replaces it with
 wall-clock time on receipt.
@@ -34,6 +36,8 @@ import time
 import json
 import sys
 import uselect
+
+FIRMWARE_VERSION = "1.0.0"
 
 # ── I2C pins — adjust for your M5Stack model ─────────────────────────────────
 SDA_PIN = 21
@@ -106,18 +110,21 @@ def _read_uid():
 
 
 def _poll_serial_input(line_buf):
-    """Drain stdin without blocking; return updated line_buf and force_read flag."""
-    force_read = False
+    """Drain stdin without blocking; return updated line_buf, force_read, version_req."""
+    force_read   = False
+    version_req  = False
     while _stdin_poll.poll(0):
         ch = sys.stdin.read(1)
         if ch == "\n":
             line = line_buf.strip()
             if '"scan"' in line:
                 force_read = True
+            if '"version"' in line:
+                version_req = True
             line_buf = ""
         else:
             line_buf += ch
-    return line_buf, force_read
+    return line_buf, force_read, version_req
 
 
 def main():
@@ -131,16 +138,19 @@ def main():
     line_buf     = ""
     force_read   = False
 
-    _emit({"event": "hb", "ts_ms": _now_ms()})  # announce boot
+    _emit({"event": "hb",      "ts_ms": _now_ms()})          # announce boot
+    _emit({"event": "version", "ver": FIRMWARE_VERSION, "ts_ms": _now_ms()})
     _display(None, hb_count, tag_count, status)
 
     while True:
         now = _now_ms()
 
         # ── Commands from Jetson ───────────────────────────────────────────
-        line_buf, new_force = _poll_serial_input(line_buf)
+        line_buf, new_force, ver_req = _poll_serial_input(line_buf)
         if new_force:
             force_read = True
+        if ver_req:
+            _emit({"event": "version", "ver": FIRMWARE_VERSION, "ts_ms": now})
 
         # ── Heartbeat ─────────────────────────────────────────────────────
         if time.ticks_diff(now, last_hb_ms) >= HB_INTERVAL_MS:
