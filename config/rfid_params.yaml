@@ -50,7 +50,7 @@ rfid:
   expected_firmware_version: "v1.5.0"
 
   # How long Execute may wait for a tag before alarm 9002 (ScanTimeout) fires.
-  scan_timeout_s: 10.0
+  scan_timeout_s: 2.0
 
   # Alarm 9001 (ReaderOffline) fires if no heartbeat is received from the
   # M5Stack for this many seconds. Must be > firmware HB_INTERVAL_MS (5 s).

@@ -9,14 +9,15 @@ the rfid_driver_node over ROS (`rfid/trigger`) and awaiting its
 import rclpy
 from std_msgs.msg import String
 
+import json
+
 from spb_node_common.ros_bridge_base import (
-    RosSpbBridgeBase, MetricDataType, addMetric,
+    RosSpbBridgeBase, MetricDataType, addMetric, STATE_COMPLETE,
 )
 from .config_loader import load_config
 
 ALARM_DEFINITIONS = {
     9001: (1, "ReaderOffline"),
-    9002: (2, "ScanTimeout"),
     9003: (1, "PrimaryHostOffline"),
 }
 
@@ -26,13 +27,32 @@ class RfidBridgeNode(RosSpbBridgeBase):
     ROS_NS          = "rfid"
     RESULT_TOPIC    = "rfid/tag"
     DETECTION_TOPIC = "rfid/scan_result"
-    TIMEOUT_ALARM   = 9002                       # ScanTimeout
-    ERROR_ALARMS    = {"ReaderOffline": 9001, "ScanTimeout": 9002}
+    TIMEOUT_ALARM   = 9001                       # driver unresponsive → treat as ReaderOffline
+    ERROR_ALARMS    = {"ReaderOffline": 9001}
 
     def __init__(self):
         cfg = load_config()
         super().__init__("rfid_bridge_node", cfg)
         self._last_tag = ""
+
+    def _detection_cb(self, msg):
+        """Intercept ScanTimeout: no tag found is not a fault — go to Complete(pass=False)."""
+        try:
+            data = json.loads(msg.data)
+        except Exception:
+            self.get_logger().warn(f"Bad detection payload: {msg.data!r}")
+            return
+        if data.get("error") == "ScanTimeout":
+            with self._sm_lock:
+                if not self._in_flight:
+                    return
+                self._in_flight = False
+                self._cancel_timeout()
+            self.get_logger().info("ScanTimeout: no tag found (pass=False)")
+            self._on_result_end(False)
+            self._set_state(STATE_COMPLETE)
+            return
+        super()._detection_cb(msg)
 
     def _cycle_timeout_s(self) -> float:
         # Slightly longer than the reader's own scan timeout so the driver's
@@ -50,9 +70,19 @@ class RfidBridgeNode(RosSpbBridgeBase):
             self._m("Result/Last/TimestampMs"): (MetricDataType.Int64,  ts),
         })
 
+    def _on_result_end(self, success: bool):
+        metrics = {self._m("Result/Last/Pass"): (MetricDataType.Boolean, success)}
+        if not success:
+            self._last_tag = ""
+            metrics[self._m("Result/Last/TagID")] = (MetricDataType.String, "")
+            m = String(); m.data = ""
+            self._result_pub.publish(m)
+        self._publish_ddata(metrics)
+
     def _publish_extra_birth_metrics(self, payload):
-        addMetric(payload, self._m("Result/Last/TagID"),       None, MetricDataType.String, "")
-        addMetric(payload, self._m("Result/Last/TimestampMs"), None, MetricDataType.Int64,  0)
+        addMetric(payload, self._m("Result/Last/TagID"),       None, MetricDataType.String,  "")
+        addMetric(payload, self._m("Result/Last/TimestampMs"), None, MetricDataType.Int64,   0)
+        addMetric(payload, self._m("Result/Last/Pass"),        None, MetricDataType.Boolean, False)
 
 
 def main(args=None):
